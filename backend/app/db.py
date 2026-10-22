@@ -9,7 +9,7 @@ import json
 import threading
 import time
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 import uuid
 
@@ -150,12 +150,19 @@ def init_db():
             VALUES ('failure_count', '0')
             """)
 
-            # Initialize STU-2026-001 wallet with 0.0 if not exists
+            # Initialize student profiles and wallets if not exist
             now_str = datetime.utcnow().isoformat()
-            cursor.execute("""
-            INSERT OR IGNORE INTO wallets (student_id, balance, updated_at)
-            VALUES ('STU-2026-001', 0.0, ?)
-            """, (now_str,))
+            demo_students = [
+                ("STU-2026-001", 0.0),
+                ("STU-2026-014", 250.0),
+                ("STU-2026-027", 120.0),
+                ("STU-2026-042", 500.0),
+            ]
+            for s_id, init_bal in demo_students:
+                cursor.execute("""
+                INSERT OR IGNORE INTO wallets (student_id, balance, updated_at)
+                VALUES (?, ?, ?)
+                """, (s_id, init_bal, now_str))
 
             conn.commit()
 
@@ -356,6 +363,35 @@ def debit_wallet(student_id: str, amount: float, description: str) -> bool:
             return True
 
 
+def rollback_wallet(student_id: str, amount: float, reason: str = "Automatic Transaction Rollback") -> Dict[str, Any]:
+    """
+    Mechanism 8: Automatic Rollback (Compensating Transaction).
+    If order fulfillment or kitchen dispatch aborts after debit,
+    this function atomically restores debited funds and records an audit credit.
+    """
+    with _lock:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT balance FROM wallets WHERE student_id = ?", (student_id,))
+            row = cursor.fetchone()
+            current = float(row["balance"]) if row else 0.0
+            new_balance = round(current + amount, 2)
+            now_str = datetime.utcnow().isoformat()
+
+            cursor.execute("""
+            UPDATE wallets SET balance = ?, updated_at = ? WHERE student_id = ?
+            """, (new_balance, now_str, student_id))
+
+            tx_id = f"RB-{uuid.uuid4().hex[:8].upper()}"
+            cursor.execute("""
+            INSERT INTO wallet_transactions (id, student_id, amount, type, description, timestamp)
+            VALUES (?, ?, ?, 'credit', ?, ?)
+            """, (tx_id, student_id, amount, f"ROLLBACK: {reason}", now_str))
+
+            conn.commit()
+            return get_wallet(student_id)
+
+
 # ============================================================
 # ORDERS & TOKENS
 # ============================================================
@@ -384,7 +420,7 @@ def create_order(
             cursor = conn.cursor()
             order_id = f"ORD-{uuid.uuid4().hex[:8].upper()}"
             token_num = f"#T-{100 + cursor.execute('SELECT COUNT(*) as cnt FROM orders').fetchone()['cnt'] + 1}"
-            now_str = datetime.utcnow().isoformat()
+            now_str = datetime.now(timezone.utc).isoformat()
 
             cursor.execute("""
             INSERT INTO orders (
@@ -485,7 +521,7 @@ def update_order_status(order_id: str, new_status: str) -> Optional[Dict[str, An
     with _lock:
         with get_db() as conn:
             cursor = conn.cursor()
-            now_str = datetime.utcnow().isoformat()
+            now_str = datetime.now(timezone.utc).isoformat()
             cursor.execute("""
             UPDATE orders SET prep_status = ?, updated_at = ? WHERE id = ?
             """, (new_status, now_str, order_id))
@@ -510,6 +546,27 @@ def update_order_status(order_id: str, new_status: str) -> Optional[Dict[str, An
                 "created_at": r["created_at"],
                 "updated_at": r["updated_at"],
             }
+
+
+def delete_order(order_id: str) -> bool:
+    with _lock:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM orders WHERE id = ?", (order_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+
+def clear_orders(scope: str = "all") -> int:
+    with _lock:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            if scope == "completed":
+                cursor.execute("DELETE FROM orders WHERE prep_status = 'completed'")
+            else:
+                cursor.execute("DELETE FROM orders")
+            conn.commit()
+            return cursor.rowcount
 
 
 # ============================================================
@@ -678,7 +735,7 @@ def record_incident(
         with get_db() as conn:
             cursor = conn.cursor()
             inc_id = f"INC-{uuid.uuid4().hex[:6].upper()}"
-            now_str = datetime.utcnow().strftime("%I:%M:%S %p")
+            now_str = datetime.now().strftime("%I:%M:%S %p")
             cursor.execute("""
             INSERT INTO incidents (id, timestamp, detected, diagnosed, action_taken, recovered, root_cause_explanation, ttd_ms, ttr_ms, severity)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -732,3 +789,136 @@ def reset_system_state():
             cursor.execute("UPDATE system_metrics SET failures_injected = 0, auto_recoveries = 0, double_charges_prevented = 0 WHERE id = 1")
             cursor.execute("DELETE FROM incidents")
             conn.commit()
+
+
+# ============================================================
+# CRM & OPERATIONS ANALYTICS
+# ============================================================
+
+STUDENT_PROFILES: Dict[str, Dict[str, str]] = {
+    "STU-2026-001": {
+        "name": "Dhruvi Patel",
+        "branch": "BCA 3rd Year (Dezyne École)",
+        "email": "dhruvi.p@campus.edu",
+        "avatar": "👩‍🎓",
+        "phone": "+91 98765 43210"
+    },
+    "STU-2026-014": {
+        "name": "Aarav Sharma",
+        "branch": "B.Tech Computer Science (2nd Yr)",
+        "email": "aarav.s@campus.edu",
+        "avatar": "👨‍💻",
+        "phone": "+91 98234 11223"
+    },
+    "STU-2026-027": {
+        "name": "Ananya Roy",
+        "branch": "B.Des Fashion & UI (3rd Yr)",
+        "email": "ananya.r@campus.edu",
+        "avatar": "🎨",
+        "phone": "+91 97112 55667"
+    },
+    "STU-2026-042": {
+        "name": "Kabir Mehta",
+        "branch": "MCA Software Systems (1st Yr)",
+        "email": "kabir.m@campus.edu",
+        "avatar": "📱",
+        "phone": "+91 96554 99881"
+    },
+}
+
+
+def get_crm_summary() -> Dict[str, Any]:
+    with _lock:
+        with get_db() as conn:
+            cursor = conn.cursor()
+
+            # 1. Total orders count & total revenue
+            cursor.execute("SELECT COUNT(*), COALESCE(SUM(total_price), 0.0) FROM orders")
+            o_row = cursor.fetchone()
+            total_orders = o_row[0] if o_row else 0
+            total_revenue = round(float(o_row[1]) if o_row else 0.0, 2)
+
+            # 2. Payment method breakdown
+            cursor.execute("SELECT payment_method, COUNT(*), COALESCE(SUM(total_price), 0.0) FROM orders GROUP BY payment_method")
+            pm_rows = cursor.fetchall()
+            payment_stats = {
+                "upi": {"count": 0, "amount": 0.0, "percentage": 0.0},
+                "campus_wallet": {"count": 0, "amount": 0.0, "percentage": 0.0}
+            }
+            for row in pm_rows:
+                pm = row["payment_method"]
+                cnt = row[1]
+                amt = round(float(row[2]), 2)
+                if pm in payment_stats:
+                    payment_stats[pm]["count"] = cnt
+                    payment_stats[pm]["amount"] = amt
+
+            if total_orders > 0:
+                payment_stats["upi"]["percentage"] = round((payment_stats["upi"]["count"] / total_orders) * 100, 1)
+                payment_stats["campus_wallet"]["percentage"] = round((payment_stats["campus_wallet"]["count"] / total_orders) * 100, 1)
+
+            # 3. Preparation status breakdown
+            cursor.execute("SELECT prep_status, COUNT(*) FROM orders GROUP BY prep_status")
+            status_rows = cursor.fetchall()
+            prep_stats = {"received": 0, "preparing": 0, "ready": 0, "completed": 0}
+            for r in status_rows:
+                st = r["prep_status"]
+                if st in prep_stats:
+                    prep_stats[st] = r[1]
+
+            # 4. Registered Students with wallet balances and order metrics
+            cursor.execute("SELECT student_id, balance, updated_at FROM wallets ORDER BY student_id ASC")
+            wallet_rows = cursor.fetchall()
+            students_list = []
+            for w in wallet_rows:
+                s_id = w["student_id"]
+                profile = STUDENT_PROFILES.get(s_id, {
+                    "name": f"Student {s_id}",
+                    "branch": "Campus Scholar",
+                    "email": f"{s_id.lower()}@campus.edu",
+                    "avatar": "🎓",
+                    "phone": "--"
+                })
+
+                # Orders by this student
+                cursor.execute("""
+                SELECT COUNT(*), COALESCE(SUM(total_price), 0.0), MAX(created_at)
+                FROM orders WHERE student_id = ?
+                """, (s_id,))
+                s_stats = cursor.fetchone()
+
+                # Preferred payment method
+                cursor.execute("""
+                SELECT payment_method, COUNT(*) as cnt
+                FROM orders WHERE student_id = ?
+                GROUP BY payment_method ORDER BY cnt DESC LIMIT 1
+                """, (s_id,))
+                pref_pm_row = cursor.fetchone()
+                pref_pm = pref_pm_row["payment_method"] if pref_pm_row else "None"
+
+                students_list.append({
+                    "student_id": s_id,
+                    "name": profile["name"],
+                    "branch": profile["branch"],
+                    "email": profile["email"],
+                    "phone": profile.get("phone", "--"),
+                    "avatar": profile["avatar"],
+                    "wallet_balance": float(w["balance"]),
+                    "orders_count": s_stats[0] if s_stats else 0,
+                    "total_spent": round(float(s_stats[1]) if s_stats else 0.0, 2),
+                    "last_order_at": s_stats[2] if s_stats else None,
+                    "preferred_payment": pref_pm,
+                })
+
+            unique_ordering_students = len([s for s in students_list if s["orders_count"] > 0])
+
+            return {
+                "total_orders": total_orders,
+                "total_revenue": total_revenue,
+                "total_students": len(students_list),
+                "active_ordering_students": unique_ordering_students,
+                "average_order_value": round(total_revenue / total_orders, 2) if total_orders > 0 else 0.0,
+                "payment_stats": payment_stats,
+                "prep_stats": prep_stats,
+                "students": students_list
+            }

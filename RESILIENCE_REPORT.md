@@ -75,6 +75,7 @@ UniCorePay implements five distinct self-healing mechanisms satisfying all requi
 | **3. Canteen Rush Traffic Surge (200 req/s)** | Rapid request ingestion saturates connection limits. | **Token-Bucket Throttling**: System marks DB health as `DEGRADED`, sheds low-priority catalog queries, and safeguards active write transactions. | **65 ms** | **23 ms** | **HIGH** |
 | **4. Process Termination (SIGKILL / Crash)** | Watchdog daemon observes loss of process heartbeat. | **Container Watchdog Recovery**: Watchdog intercepts process exit, restarts container, validates SQLite WAL journal integrity, and restores operational baseline. | **140 ms** | **23 ms** | **CRITICAL** |
 | **5. Client Retry Storm (Double-Click)** | Ingestion of identical request payloads carrying duplicate idempotency keys. | **Hyperswitch Idempotency Guard**: Intercepts duplicate key, bypasses wallet deduction, returns pre-computed order payload, increments `double_charges_prevented`. | **12 ms** | **17 ms** | **MEDIUM** |
+| **6. Post-Debit Fulfillment Abort (Kitchen Queue)** | Kitchen pipeline interrupts order commit after wallet balance has already been debited. | **Automatic Rollback Engine (Mechanism 8)**: Executes compensating transaction, credits 100% funds back to Campus Wallet with atomic audit log, and notifies client. | **15 ms** | **33 ms** | **HIGH** |
 
 ---
 

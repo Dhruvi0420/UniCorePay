@@ -67,6 +67,7 @@ graph TD
 | **3** | **Canteen Rush Traffic Spike (200+ req/s)** | Connection pool saturation detected | **Rate Limiter & Priority Queue:** Throttles exploratory reads, marks DB `DEGRADED`, and prioritizes in-flight order writes. | **~23 ms** |
 | **4** | **Backend Process SIGKILL / Container Crash** | Watchdog daemon detects heartbeat loss | **Watchdog Auto-Restart:** Recovers process, verifies SQLite WAL journal integrity, and restores baseline health metrics. | **~23 ms** |
 | **5** | **Client Retry Storm (Double-Click Panic)** | Idempotency key collision | **Hyperswitch Idempotency Guard:** Intercepts duplicate request, prevents second debit, returns original token, increments `double_charges_prevented`. | **~17 ms** |
+| **6** | **Fulfillment Interruption (Kitchen Abort)** | Pipeline stall after wallet debit | **Automatic Rollback Engine (Mechanism 8):** Executes atomic compensating transaction, refunds 100% money back to wallet, and registers incident. | **~33 ms** |
 
 ---
 

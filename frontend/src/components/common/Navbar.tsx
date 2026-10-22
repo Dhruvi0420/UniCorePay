@@ -30,9 +30,11 @@ export function Navbar({ isDark, onToggleTheme }: NavbarProps) {
         </button>
       </nav>
       <div className="header-actions">
-        <span className="wallet-mini" title="Live Campus Wallet Balance">
-          💳 ₹{walletBalance.toFixed(2)}
-        </span>
+        {role === "student" && (
+          <span className="wallet-mini" title="Live Campus Wallet Balance">
+            💳 ₹{walletBalance.toFixed(2)}
+          </span>
+        )}
         <button
           className="theme-toggle"
           aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}

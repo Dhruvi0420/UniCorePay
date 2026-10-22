@@ -50,6 +50,12 @@ async def list_incident_logs():
     return db.get_all_incidents()
 
 
+@router.get("/crm-summary")
+async def get_crm_summary():
+    """Retrieve CRM analytics, student counts, order timelines, and payment method statistics."""
+    return db.get_crm_summary()
+
+
 @router.post("/chaos")
 async def trigger_chaos_action(req: ChaosActionRequest):
     """Inject a chaos fault to test self-healing resilience."""
@@ -105,6 +111,21 @@ async def trigger_chaos_action(req: ChaosActionRequest):
             severity="CRITICAL"
         )
         return {"status": "triggered", "incident": inc}
+
+    elif action == "rollback":
+        db.set_active_chaos("rollback")
+        db.update_system_metric("failures_injected", 1)
+        inc = db.record_incident(
+            detected="⚡ CHAOS ARMED: Post-debit Kitchen Pipeline Abort armed",
+            diagnosed="Next incoming payment will deduct funds and then kitchen queue will fail",
+            action_taken="Automatic Rollback Engine (Mechanism 8) armed to trigger compensating refund",
+            recovered=False,
+            root_cause="Testing atomic rollback and immediate wallet refund upon fulfillment failure.",
+            ttd_ms=15,
+            ttr_ms=25,
+            severity="HIGH"
+        )
+        return {"status": "armed", "incident": inc}
 
     elif action == "reset":
         db.reset_system_state()

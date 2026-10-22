@@ -3,6 +3,8 @@ import type { KitchenOrder } from "../../types";
 interface KitchenQueueProps {
   orders: KitchenOrder[];
   onAdvanceStatus: (orderId: string) => void;
+  onDeleteOrder: (orderId: string) => void;
+  onClearAllOrders: () => void;
 }
 
 const nextAction = {
@@ -11,7 +13,7 @@ const nextAction = {
   ready: "Complete order ✅",
 } as const;
 
-export function KitchenQueue({ orders, onAdvanceStatus }: KitchenQueueProps) {
+export function KitchenQueue({ orders, onAdvanceStatus, onDeleteOrder, onClearAllOrders }: KitchenQueueProps) {
   const activeOrders = orders.filter((order) => order.status !== "completed");
 
   return (
@@ -23,7 +25,29 @@ export function KitchenQueue({ orders, onAdvanceStatus }: KitchenQueueProps) {
             Incoming live tokens ordered by students across campus.
           </small>
         </div>
-        <span className="muted-badge">{activeOrders.length} active orders</span>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <span className="muted-badge">{activeOrders.length} active orders</span>
+          {orders.length > 0 && (
+            <button
+              type="button"
+              className="outline-button"
+              style={{
+                padding: "5px 12px",
+                fontSize: "11px",
+                borderRadius: "999px",
+                cursor: "pointer",
+              }}
+              onClick={() => {
+                if (window.confirm("Clear all orders from the kitchen queue?")) {
+                  onClearAllOrders();
+                }
+              }}
+              title="Mass delete all orders"
+            >
+              Clear Queue 🗑️
+            </button>
+          )}
+        </div>
       </div>
 
       {orders.length === 0 ? (
@@ -48,14 +72,32 @@ export function KitchenQueue({ orders, onAdvanceStatus }: KitchenQueueProps) {
                   ₹{order.totalPrice.toFixed(2)} · {order.paymentMethod.replace("_", " ").toUpperCase()} · {order.time}
                 </small>
               </div>
-              {order.status !== "completed" && (
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                {order.status !== "completed" && (
+                  <button
+                    className="queue-button"
+                    onClick={() => onAdvanceStatus(order.id)}
+                  >
+                    {nextAction[order.status]}
+                  </button>
+                )}
                 <button
-                  className="queue-button"
-                  onClick={() => onAdvanceStatus(order.id)}
+                  type="button"
+                  className="outline-button"
+                  style={{
+                    padding: "7px 10px",
+                    fontSize: "12px",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    color: "var(--muted)",
+                  }}
+                  onClick={() => onDeleteOrder(order.id)}
+                  title="Delete this order"
+                  aria-label="Delete order"
                 >
-                  {nextAction[order.status]}
+                  ✕
                 </button>
-              )}
+              </div>
             </article>
           ))}
         </div>

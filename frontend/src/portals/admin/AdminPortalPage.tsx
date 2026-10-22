@@ -4,38 +4,31 @@ import { SREDashboard } from "../../components/sre/SREDashboard";
 import { KitchenQueue } from "../../components/kitchen/KitchenQueue";
 import { ChaosConsole } from "../../components/chaos/ChaosConsole";
 import { MenuManager } from "../../components/admin/MenuManager";
-import { WalletManager } from "../../components/admin/WalletManager";
 
 export function AdminPortalPage() {
-  const [activeTab, setActiveTab] = useState<"kitchen" | "menu" | "wallet" | "sre">("kitchen");
+  const [activeTab, setActiveTab] = useState<"kitchen" | "menu" | "sre">("kitchen");
 
   const {
     menu,
     addMenuItem,
     deleteMenuItem,
     toggleMenuItemAvailability,
-    walletBalance,
-    walletTransactions,
-    topupWallet,
-    setWalletBalanceAdmin,
     circuitState,
     activeChaos,
     metrics,
     health,
     kitchenOrders,
+    advanceKitchenStatus,
+    deleteOrder,
+    clearAllOrders,
     incidents,
     selectedIncident,
     setSelectedIncident,
     triggerChaos,
-    advanceKitchenStatus,
     resetAll,
   } = useCanteen();
 
   const activeOrdersCount = kitchenOrders.filter((o) => o.status !== "completed").length;
-  const autoRecoveryRate =
-    metrics.failuresInjected > 0
-      ? ((metrics.autoRecoveries / metrics.failuresInjected) * 100).toFixed(0)
-      : "100";
 
   return (
     <main className="admin-page">
@@ -43,9 +36,18 @@ export function AdminPortalPage() {
         <div>
           <p className="eyebrow">Service desk · live operations</p>
           <h1 className="admin-title">Lunch, in motion.</h1>
-          <p>
-            {activeOrdersCount} active orders · {menu.length} menu items · Student Wallet ₹{walletBalance.toFixed(2)} · {autoRecoveryRate}% recovery rate · Circuit {circuitState.toLowerCase()}
-          </p>
+          <div style={{ display: "flex", gap: "8px", marginTop: "10px", alignItems: "center" }}>
+            <span className="muted-badge">{activeOrdersCount} active orders</span>
+            <span
+              className="muted-badge"
+              style={{
+                color: circuitState === "OPEN" ? "#c15b43" : "var(--leaf)",
+                fontWeight: 600,
+              }}
+            >
+              ● Circuit {circuitState.toLowerCase()}
+            </span>
+          </div>
         </div>
         <div className="admin-tabs">
           <button
@@ -61,53 +63,39 @@ export function AdminPortalPage() {
             Menu items {menu.length > 0 ? `(${menu.length})` : ""}
           </button>
           <button
-            className={activeTab === "wallet" ? "active" : ""}
-            onClick={() => setActiveTab("wallet")}
-          >
-            Campus wallet (₹{walletBalance.toFixed(0)})
-          </button>
-          <button
             className={activeTab === "sre" ? "active" : ""}
             onClick={() => setActiveTab("sre")}
           >
-            Service health
+            Service health & controls
           </button>
         </div>
       </div>
 
-      <div className="admin-tools">
-        <span>Operational controls & live sync</span>
-        <button
-          className="admin-reset"
-          onClick={resetAll}
-          title="Restore wallet and simulated service health"
-        >
-          Reset system state
-        </button>
-      </div>
+      {activeTab === "kitchen" && (
+        <section className="admin-panel" style={{ width: "100%" }}>
+          <KitchenQueue
+            orders={kitchenOrders}
+            onAdvanceStatus={advanceKitchenStatus}
+            onDeleteOrder={deleteOrder}
+            onClearAllOrders={clearAllOrders}
+          />
+        </section>
+      )}
 
-      <div className="admin-grid">
-        <section className="admin-panel">
-          {activeTab === "kitchen" && (
-            <KitchenQueue orders={kitchenOrders} onAdvanceStatus={advanceKitchenStatus} />
-          )}
-          {activeTab === "menu" && (
-            <MenuManager
-              menu={menu}
-              onAddItem={addMenuItem}
-              onDeleteItem={deleteMenuItem}
-              onToggleAvailability={toggleMenuItemAvailability}
-            />
-          )}
-          {activeTab === "wallet" && (
-            <WalletManager
-              walletBalance={walletBalance}
-              transactions={walletTransactions}
-              onTopup={topupWallet}
-              onSetBalance={setWalletBalanceAdmin}
-            />
-          )}
-          {activeTab === "sre" && (
+      {activeTab === "menu" && (
+        <section className="admin-panel" style={{ width: "100%" }}>
+          <MenuManager
+            menu={menu}
+            onAddItem={addMenuItem}
+            onDeleteItem={deleteMenuItem}
+            onToggleAvailability={toggleMenuItemAvailability}
+          />
+        </section>
+      )}
+
+      {activeTab === "sre" && (
+        <div className="admin-grid">
+          <section className="admin-panel">
             <SREDashboard
               health={health}
               circuitState={circuitState}
@@ -116,15 +104,17 @@ export function AdminPortalPage() {
               selectedIncident={selectedIncident}
               onSelectIncident={setSelectedIncident}
             />
-          )}
-        </section>
+          </section>
 
-        <ChaosConsole
-          activeChaos={activeChaos}
-          selectedIncident={selectedIncident}
-          onTriggerChaos={triggerChaos}
-        />
-      </div>
+          <aside className="admin-rail">
+            <ChaosConsole
+              activeChaos={activeChaos}
+              onTriggerChaos={triggerChaos}
+              onResetSystem={resetAll}
+            />
+          </aside>
+        </div>
+      )}
     </main>
   );
 }

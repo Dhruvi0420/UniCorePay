@@ -186,6 +186,46 @@ def run_idempotency_benchmark(client: httpx.Client):
     else:
         print("\n  [VERIFICATION FAILED] Duplicate order created!")
 
+def run_rollback_scenario(client: httpx.Client):
+    print_header("Scenario 6: Post-Debit Fulfillment Abort & Automatic Rollback")
+    print("  Goal: Payment debited from Campus Wallet, then kitchen pipeline aborts.")
+    print("        Verify compensating transaction executes and 100% funds refunded.")
+    
+    # 1. Check wallet balance before
+    before_wallet = client.get(f"{BASE_URL}/wallet/STU-2026-001").json()
+    bal_before = before_wallet.get("balance", 0.0)
+    
+    # 2. Arm rollback chaos
+    res = client.post(f"{BASE_URL}/system/chaos", json={"action": "rollback"}, timeout=5.0)
+    print_row("Chaos Armed", res.json().get("status"))
+    
+    # 3. Place order (will trigger debit + immediate rollback)
+    order_payload = {
+        "student_id": "STU-2026-001",
+        "items": [{"name": "Grilled Sandwich", "qty": 1, "price": 80.0, "emoji": "🥪"}],
+        "payment_method": "campus_wallet",
+        "idempotency_key": f"chaos-rollback-{int(time.time()*1000)}"
+    }
+    t0 = time.time()
+    order_res = client.post(f"{BASE_URL}/orders", json=order_payload, timeout=5.0)
+    ttr = round((time.time() - t0) * 1000)
+    
+    # 4. Check wallet balance after
+    after_wallet = client.get(f"{BASE_URL}/wallet/STU-2026-001").json()
+    bal_after = after_wallet.get("balance", 0.0)
+    
+    print_row("Order HTTP Status", f"{order_res.status_code} (Expected Abort)")
+    print_row("Wallet Balance Before", f"INR {bal_before:.2f}")
+    print_row("Wallet Balance After", f"INR {bal_after:.2f}")
+    print_row("Net Balance Difference", f"INR {bal_after - bal_before:.2f}")
+    print_row("Compensating Transaction Time", f"{ttr} ms")
+    
+    if bal_before == bal_after and order_res.status_code == 400:
+        print("\n  [VERIFICATION PASSED] Balance perfectly conserved! 0 INR lost.")
+        print("  Compensating transaction (Mechanism 8: Automatic Rollback) fully validated!")
+    else:
+        print(f"\n  [FAILED] Balance mismatch: Before {bal_before} vs After {bal_after}")
+
 def run_full_scorecard(client: httpx.Client):
     print_header("UniCorePay SRE Self-Healing Benchmark Scorecard")
     
@@ -197,6 +237,7 @@ def run_full_scorecard(client: httpx.Client):
     run_traffic_spike_scenario(client)
     run_kill_backend_scenario(client)
     run_idempotency_benchmark(client)
+    run_rollback_scenario(client)
     
     # Fetch final incidents & status
     status = client.get(f"{BASE_URL}/system/status").json()
@@ -217,7 +258,7 @@ def run_full_scorecard(client: httpx.Client):
 
 def main():
     parser = argparse.ArgumentParser(description="UniCorePay Chaos Engineering Test Suite")
-    parser.add_argument("--scenario", choices=["upi_timeout", "mid_payment", "traffic_spike", "kill_backend"], help="Trigger a specific failure")
+    parser.add_argument("--scenario", choices=["upi_timeout", "mid_payment", "traffic_spike", "kill_backend", "rollback"], help="Trigger a specific failure")
     parser.add_argument("--all", action="store_true", help="Execute all chaos scenarios sequentially")
     parser.add_argument("--benchmark", action="store_true", help="Run full SRE scorecard benchmark")
     parser.add_argument("--reset", action="store_true", help="Reset system state and metrics")
@@ -240,6 +281,8 @@ def main():
             run_traffic_spike_scenario(client)
         elif args.scenario == "kill_backend":
             run_kill_backend_scenario(client)
+        elif args.scenario == "rollback":
+            run_rollback_scenario(client)
         elif args.all or args.benchmark:
             run_full_scorecard(client)
         else:
@@ -251,11 +294,12 @@ def main():
             print("  4. Inject Lunch Rush Traffic Spike (Rate Limiter)")
             print("  5. Inject Backend SIGKILL (Watchdog Daemon)")
             print("  6. Test Idempotency Double-Charge Guard")
-            print("  7. Reset Baseline State")
+            print("  7. Test Post-Debit Kitchen Abort & Rollback (Auto-Refund)")
+            print("  8. Reset Baseline State")
             print("  0. Exit")
             
             try:
-                choice = input("\nSelect an option [0-7]: ").strip()
+                choice = input("\nSelect an option [0-8]: ").strip()
                 if choice == "1":
                     run_full_scorecard(client)
                 elif choice == "2":
@@ -269,6 +313,8 @@ def main():
                 elif choice == "6":
                     run_idempotency_benchmark(client)
                 elif choice == "7":
+                    run_rollback_scenario(client)
+                elif choice == "8":
                     reset_system(client)
                 else:
                     print("Exiting.")

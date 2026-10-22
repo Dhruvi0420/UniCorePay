@@ -88,15 +88,26 @@ export function useCanteenState() {
       if (res.ok) {
         const data = await res.json();
         // Transform backend order to KitchenOrder
-        const transformed: KitchenOrder[] = data.map((o: any) => ({
-          id: o.id,
-          tokenNumber: o.token_number || `#T-${o.id.slice(-4)}`,
-          items: o.items || [],
-          totalPrice: o.total_price || 0,
-          paymentMethod: o.payment_method || "upi",
-          status: (o.prep_status || "received") as OrderStatus,
-          time: new Date(o.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        }));
+        const transformed: KitchenOrder[] = data.map((o: any) => {
+          const rawCreated = o.created_at || "";
+          const utcString = rawCreated.includes("Z") || rawCreated.includes("+")
+            ? rawCreated
+            : rawCreated + "Z";
+          const orderDate = new Date(utcString);
+          const timeFormatted = isNaN(orderDate.getTime())
+            ? new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true })
+            : orderDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true });
+
+          return {
+            id: o.id,
+            tokenNumber: o.token_number || `#T-${o.id.slice(-4)}`,
+            items: o.items || [],
+            totalPrice: o.total_price || 0,
+            paymentMethod: o.payment_method || "upi",
+            status: (o.prep_status || "received") as OrderStatus,
+            time: timeFormatted,
+          };
+        });
         setKitchenOrders(transformed);
       }
     } catch (err) {
@@ -112,7 +123,14 @@ export function useCanteenState() {
         setCircuitState(data.circuit_state || "CLOSED");
         setActiveChaos(data.active_chaos || null);
         if (data.metrics) setMetrics(data.metrics);
-        if (data.health) setHealth(data.health);
+        if (data.health) {
+          setHealth({
+            aiAgent: data.health.aiAgent || data.health.ai_agent || "healthy",
+            upiGateway: data.health.upiGateway || data.health.upi_gateway || "healthy",
+            campusWallet: data.health.campusWallet || data.health.campus_wallet || "healthy",
+            database: data.health.database || "healthy",
+          });
+        }
       }
 
       const incRes = await fetch("/api/v1/system/incidents");
@@ -490,6 +508,34 @@ export function useCanteenState() {
     }
   };
 
+  const deleteOrder = async (orderId: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/v1/orders/${orderId}`, { method: "DELETE" });
+      if (res.ok) {
+        await fetchOrders();
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error("Failed to delete order:", err);
+      return false;
+    }
+  };
+
+  const clearAllOrders = async (scope: string = "all"): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/v1/orders?scope=${scope}`, { method: "DELETE" });
+      if (res.ok) {
+        await fetchOrders();
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error("Failed to clear orders:", err);
+      return false;
+    }
+  };
+
   // Chaos Monkey triggers
   const triggerChaos = async (type: string) => {
     try {
@@ -544,6 +590,8 @@ export function useCanteenState() {
     // Kitchen & Orders
     kitchenOrders,
     advanceKitchenStatus,
+    deleteOrder,
+    clearAllOrders,
 
     // SRE & Chaos
     circuitState,

@@ -10,6 +10,7 @@ export function StudentPortalPage() {
     removeFromCart,
     placeOrder,
     walletBalance,
+    topupWallet,
     circuitState,
     messages,
     isProcessing,
@@ -209,11 +210,35 @@ export function StudentPortalPage() {
 
           {/* Connected Student Wallet */}
           <div className="wallet-card">
-            <p className="wallet-label">Campus Wallet</p>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <p className="wallet-label">Campus Wallet</p>
+              <button
+                type="button"
+                className="outline-button"
+                style={{
+                  padding: "3px 9px",
+                  fontSize: "11px",
+                  color: "#fff",
+                  borderColor: "rgba(255,255,255,0.25)",
+                  borderRadius: "999px",
+                  cursor: "pointer",
+                }}
+                onClick={() => {
+                  const amtStr = window.prompt("Enter amount to add to your Campus Wallet (₹):", "200");
+                  const amt = parseFloat(amtStr || "");
+                  if (!isNaN(amt) && amt > 0) {
+                    topupWallet(amt, "Student self-recharge");
+                  }
+                }}
+                title="Top up your wallet balance"
+              >
+                + Add Money
+              </button>
+            </div>
             <p className="wallet-amount">₹{walletBalance.toFixed(2)}</p>
             <div className="wallet-footer">
               <span>STU-2026-001</span>
-              <b>{walletBalance > 0 ? "Funded & Connected" : "Top-up in Admin"}</b>
+              <b>{walletBalance > 0 ? "Funded & Connected" : "Zero Balance"}</b>
             </div>
           </div>
 

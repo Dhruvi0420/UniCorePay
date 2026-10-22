@@ -96,7 +96,34 @@ async def place_order(order_req: OrderCreateRequest):
         backoff_jitter_ms = random.randint(45, 115)
         self_healing_notes.append(f"Tenacity Backoff ({backoff_jitter_ms}ms) + Idempotency Guard verified")
 
-    # 4. Mid-Payment Crash Simulation & Reconciliation Worker
+    # 4. Mechanism 8: Automatic Rollback Simulation (Kitchen Pipeline Abort)
+    if active_chaos == "rollback":
+        db.set_active_chaos("none")
+        db.update_system_metric("auto_recoveries", 1)
+        
+        # Compensating transaction: Auto-Refund money back to wallet
+        refunded_wallet = db.rollback_wallet(
+            student_id=order_req.student_id,
+            amount=total_price,
+            reason="Kitchen fulfillment pipeline interrupted - Auto Refund"
+        )
+        
+        db.record_incident(
+            detected=f"💥 Kitchen fulfillment aborted after debit of ₹{total_price:.2f}",
+            diagnosed="Kitchen pipeline unavailable simulation (out-of-stock / queue stall)",
+            action_taken=f"AUTOMATIC ROLLBACK executed ➔ ₹{total_price:.2f} refunded to Campus Wallet (Balance: ₹{refunded_wallet['balance']:.2f})",
+            recovered=True,
+            root_cause="Compensating transaction pattern (Mechanism 8: Automatic Rollback) executed to prevent financial loss.",
+            ttd_ms=15,
+            ttr_ms=18,
+            severity="HIGH"
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"⚠️ Kitchen pipeline was momentarily interrupted. AUTOMATIC ROLLBACK has refunded ₹{total_price:.2f} back to your Campus Wallet! (Current Balance: ₹{refunded_wallet['balance']:.2f})"
+        )
+
+    # 5. Mid-Payment Crash Simulation & Reconciliation Worker
     if active_chaos == "mid_payment":
         db.set_active_chaos("none")
         db.update_system_metric("auto_recoveries", 1)
@@ -112,19 +139,37 @@ async def place_order(order_req: OrderCreateRequest):
         )
         self_healing_notes.append("Autonomous Reconciliation Worker auto-recovered orphaned debit")
 
-    # 5. Save Order in Database
-    items_data = [item.model_dump() for item in order_req.items]
-    created_order = db.create_order(
-        student_id=order_req.student_id,
-        items=items_data,
-        total_price=total_price,
-        payment_method=payment_method.value,
-        payment_status=PaymentStatus.PAID.value,
-        idempotency_key=order_req.idempotency_key or "",
-        self_healing_notes=self_healing_notes
-    )
-
-    return created_order
+    # 6. Save Order in Database with Exception Safety Rollback
+    try:
+        items_data = [item.model_dump() for item in order_req.items]
+        created_order = db.create_order(
+            student_id=order_req.student_id,
+            items=items_data,
+            total_price=total_price,
+            payment_method=payment_method.value,
+            payment_status=PaymentStatus.PAID.value,
+            idempotency_key=order_req.idempotency_key or "",
+            self_healing_notes=self_healing_notes
+        )
+        return created_order
+    except Exception as exc:
+        if payment_method == PaymentMethod.CAMPUS_WALLET:
+            db.rollback_wallet(order_req.student_id, total_price, "Order commit exception - Auto Refund")
+            db.update_system_metric("auto_recoveries", 1)
+            db.record_incident(
+                detected="Unexpected database commit failure during order creation",
+                diagnosed=str(exc),
+                action_taken=f"AUTOMATIC ROLLBACK executed ➔ ₹{total_price:.2f} refunded immediately",
+                recovered=True,
+                root_cause="Database exception caught. Compensating transaction prevented stranded balance.",
+                ttd_ms=10,
+                ttr_ms=15,
+                severity="CRITICAL"
+            )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Order creation failed, but your Campus Wallet was safely rolled back and refunded (+₹{total_price:.2f})."
+        )
 
 
 @router.patch("/{order_id}/status", response_model=Order)
@@ -134,3 +179,21 @@ async def update_order_preparation_status(order_id: str, payload: OrderStatusUpd
     if not updated:
         raise HTTPException(status_code=404, detail="Order not found")
     return updated
+
+
+@router.delete("/clear")
+@router.delete("")
+@router.delete("/")
+async def clear_all_orders(scope: str = "all"):
+    """Kitchen staff / Admin mass deletes orders (scope='all' or scope='completed')."""
+    deleted_count = db.clear_orders(scope)
+    return {"status": "cleared", "deleted_count": deleted_count}
+
+
+@router.delete("/{order_id}")
+async def delete_single_order(order_id: str):
+    """Kitchen staff / Admin deletes a specific order."""
+    success = db.delete_order(order_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return {"status": "deleted", "order_id": order_id}
