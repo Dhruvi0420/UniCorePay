@@ -15,5 +15,6 @@ __pycache__/
 
 # Database / temporary files
 *.sqlite3
+*.db
 data/
 *.log

@@ -9,6 +9,17 @@ export type PaymentMethod = "upi" | "campus_wallet";
 export type CircuitState = "CLOSED" | "OPEN" | "HALF_OPEN";
 export type ComponentHealth = "healthy" | "degraded" | "down";
 
+export interface FoodItem {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  emoji: string;
+  category: string;
+  available: boolean;
+  created_at?: string;
+}
+
 export interface OrderItem {
   name: string;
   qty: number;
@@ -43,6 +54,18 @@ export interface Incident {
   actionTaken: string;
   recovered: boolean;
   rootCause: string;
+  ttdMs?: number;
+  ttrMs?: number;
+  severity?: string;
+}
+
+export interface WalletTransaction {
+  id: string;
+  student_id: string;
+  amount: number;
+  type: "credit" | "debit";
+  description: string;
+  timestamp: string;
 }
 
 export interface SystemHealthState {
