@@ -1,5 +1,3 @@
-import type { Incident } from "../../types";
-
 interface ChaosConsoleProps {
   activeChaos: string | null;
   onTriggerChaos: (type: string) => void;

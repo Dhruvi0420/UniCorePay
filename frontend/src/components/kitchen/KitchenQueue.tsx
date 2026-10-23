@@ -1,4 +1,5 @@
 import type { KitchenOrder } from "../../types";
+import { PaytmSoundbox } from "../common/PaytmSoundbox";
 
 interface KitchenQueueProps {
   orders: KitchenOrder[];
@@ -18,7 +19,10 @@ export function KitchenQueue({ orders, onAdvanceStatus, onDeleteOrder, onClearAl
 
   return (
     <div>
-      <div className="panel-title-row">
+      {/* Paytm Canteen Soundbox Audio Announcer */}
+      <PaytmSoundbox latestOrder={orders[0]} />
+
+      <div className="panel-title-row" style={{ marginTop: "18px" }}>
         <div>
           <h3 style={{ margin: 0 }}>Live Kitchen Queue</h3>
           <small style={{ color: "var(--muted)" }}>

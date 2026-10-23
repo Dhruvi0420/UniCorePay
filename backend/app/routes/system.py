@@ -1,3 +1,5 @@
+import random
+from datetime import datetime
 from fastapi import APIRouter
 from typing import List, Dict, Any
 from app.models import (
@@ -21,6 +23,7 @@ async def get_system_status():
     metrics_data = db.get_system_metrics()
 
     # Determine health components based on state and active chaos
+    is_paytm_down = (circuit_state == "OPEN" or active_chaos == "upi_timeout")
     if circuit_state == "OPEN":
         upi_health = ComponentHealth.DOWN
     elif circuit_state == "HALF_OPEN":
@@ -31,6 +34,48 @@ async def get_system_status():
     db_health = ComponentHealth.DEGRADED if active_chaos == "traffic_spike" else ComponentHealth.HEALTHY
     ai_health = ComponentHealth.DOWN if active_chaos == "kill_backend" else ComponentHealth.HEALTHY
 
+    paytm_latency = random.randint(3100, 4200) if is_paytm_down else random.randint(34, 68)
+    paytm_packet_loss = 100 if is_paytm_down else 0
+
+    external_services = [
+        {
+            "id": "paytm_gateway",
+            "name": "Paytm UPI Payment Gateway",
+            "provider": "One97 Communications (Paytm PG)",
+            "endpoint": "https://securegw.paytm.in/theia/api/v1/process",
+            "type": "External Third-Party Aggregator",
+            "status": "DOWN" if is_paytm_down else "UP",
+            "http_code": 504 if is_paytm_down else 200,
+            "latency_ms": paytm_latency,
+            "packet_loss_pct": paytm_packet_loss,
+            "last_heartbeat": datetime.utcnow().isoformat()
+        },
+        {
+            "id": "npci_switch",
+            "name": "NPCI UPI Core Network Switch",
+            "provider": "National Payments Corporation of India",
+            "endpoint": "https://upi.npci.org.in/v2/switch",
+            "type": "National Clearing Switch",
+            "status": "UP",
+            "http_code": 200,
+            "latency_ms": 18,
+            "packet_loss_pct": 0,
+            "last_heartbeat": datetime.utcnow().isoformat()
+        },
+        {
+            "id": "campus_wallet_switch",
+            "name": "Campus Core Wallet Ledger",
+            "provider": "UniCore Institutional Banking",
+            "endpoint": "internal://ledger.campus.bank/v2/debit",
+            "type": "Internal Atomic Fallback",
+            "status": "UP",
+            "http_code": 200,
+            "latency_ms": 4,
+            "packet_loss_pct": 0,
+            "last_heartbeat": datetime.utcnow().isoformat()
+        }
+    ]
+
     return {
         "circuit_state": circuit_state,
         "active_chaos": active_chaos if active_chaos != "none" else None,
@@ -40,8 +85,16 @@ async def get_system_status():
             "upi_gateway": upi_health.value,
             "campus_wallet": ComponentHealth.HEALTHY.value,
             "database": db_health.value,
-        }
+        },
+        "external_services": external_services
     }
+
+
+@router.get("/external-services")
+async def get_external_services():
+    """Retrieve live status of external upstream dependencies (Paytm, NPCI, Bank Ledger)."""
+    status_data = await get_system_status()
+    return status_data["external_services"]
 
 
 @router.get("/incidents", response_model=List[IncidentLog])

@@ -11,6 +11,8 @@ import type {
   PaymentMethod,
   OrderStatus,
   WalletTransaction,
+  CRMStats,
+  ExternalServiceInfo,
 } from "../types";
 
 const STUDENT_ID = "STU-2026-001";
@@ -21,6 +23,8 @@ export function useCanteenState() {
   const [walletBalance, setWalletBalance] = useState<number>(0.0);
   const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>([]);
   const [kitchenOrders, setKitchenOrders] = useState<KitchenOrder[]>([]);
+  const [crmStats, setCrmStats] = useState<CRMStats | null>(null);
+  const [externalServices, setExternalServices] = useState<ExternalServiceInfo[]>([]);
   const [cart, setCart] = useState<OrderItem[]>([]);
   const [circuitState, setCircuitState] = useState<CircuitState>("CLOSED");
   const [activeChaos, setActiveChaos] = useState<string | null>(null);
@@ -101,17 +105,32 @@ export function useCanteenState() {
           return {
             id: o.id,
             tokenNumber: o.token_number || `#T-${o.id.slice(-4)}`,
+            studentId: o.student_id || "STU-2026-001",
             items: o.items || [],
             totalPrice: o.total_price || 0,
             paymentMethod: o.payment_method || "upi",
             status: (o.prep_status || "received") as OrderStatus,
             time: timeFormatted,
+            createdAt: o.created_at || "",
+            selfHealingNotes: o.self_healing_notes || [],
           };
         });
         setKitchenOrders(transformed);
       }
     } catch (err) {
       console.warn("Could not fetch orders:", err);
+    }
+  }, []);
+
+  const fetchCrmStats = useCallback(async () => {
+    try {
+      const res = await fetch("/api/v1/system/crm-summary");
+      if (res.ok) {
+        const data: CRMStats = await res.json();
+        setCrmStats(data);
+      }
+    } catch (err) {
+      console.warn("Could not fetch CRM stats:", err);
     }
   }, []);
 
@@ -122,6 +141,9 @@ export function useCanteenState() {
         const data = await res.json();
         setCircuitState(data.circuit_state || "CLOSED");
         setActiveChaos(data.active_chaos || null);
+        if (data.external_services) {
+          setExternalServices(data.external_services);
+        }
         if (data.metrics) setMetrics(data.metrics);
         if (data.health) {
           setHealth({
@@ -159,8 +181,8 @@ export function useCanteenState() {
   }, [selectedIncident]);
 
   const refreshAll = useCallback(async () => {
-    await Promise.all([fetchMenu(), fetchWallet(), fetchOrders(), fetchSystemStatus()]);
-  }, [fetchMenu, fetchWallet, fetchOrders, fetchSystemStatus]);
+    await Promise.all([fetchMenu(), fetchWallet(), fetchOrders(), fetchSystemStatus(), fetchCrmStats()]);
+  }, [fetchMenu, fetchWallet, fetchOrders, fetchSystemStatus, fetchCrmStats]);
 
   // Initial load on mount & periodic sync
   useEffect(() => {
@@ -593,16 +615,21 @@ export function useCanteenState() {
     deleteOrder,
     clearAllOrders,
 
-    // SRE & Chaos
+    // SRE & Chaos & External Services
     circuitState,
     activeChaos,
     metrics,
     health,
+    externalServices,
     incidents,
     selectedIncident,
     setSelectedIncident,
     triggerChaos,
     resetAll,
+
+    // CRM & Student Analytics
+    crmStats,
+    fetchCrmStats,
 
     // Chat & State
     messages,

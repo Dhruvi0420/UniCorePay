@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useCanteen } from "../../context/CanteenContext";
-import { SREDashboard } from "../../components/sre/SREDashboard";
+import { AdminSidebar, type AdminTab } from "../../components/admin/AdminSidebar";
+import { AdminCRMView } from "../../components/admin/AdminCRMView";
 import { KitchenQueue } from "../../components/kitchen/KitchenQueue";
-import { ChaosConsole } from "../../components/chaos/ChaosConsole";
 import { MenuManager } from "../../components/admin/MenuManager";
+import { SREDashboard } from "../../components/sre/SREDashboard";
+import { ChaosConsole } from "../../components/chaos/ChaosConsole";
 
 export function AdminPortalPage() {
-  const [activeTab, setActiveTab] = useState<"kitchen" | "menu" | "sre">("kitchen");
+  const [activeTab, setActiveTab] = useState<AdminTab>("crm");
 
   const {
     menu,
@@ -26,95 +28,114 @@ export function AdminPortalPage() {
     setSelectedIncident,
     triggerChaos,
     resetAll,
+    externalServices,
+    crmStats,
+    refreshAll,
   } = useCanteen();
 
   const activeOrdersCount = kitchenOrders.filter((o) => o.status !== "completed").length;
 
   return (
-    <main className="admin-page">
-      <div className="admin-topline">
-        <div>
-          <p className="eyebrow">Service desk · live operations</p>
-          <h1 className="admin-title">Lunch, in motion.</h1>
-          <div style={{ display: "flex", gap: "8px", marginTop: "10px", alignItems: "center" }}>
-            <span className="muted-badge">{activeOrdersCount} active orders</span>
-            <span
-              className="muted-badge"
-              style={{
-                color: circuitState === "OPEN" ? "#c15b43" : "var(--leaf)",
-                fontWeight: 600,
-              }}
-            >
-              ● Circuit {circuitState.toLowerCase()}
-            </span>
-          </div>
-        </div>
-        <div className="admin-tabs">
-          <button
-            className={activeTab === "kitchen" ? "active" : ""}
-            onClick={() => setActiveTab("kitchen")}
-          >
-            Kitchen queue {activeOrdersCount > 0 ? `(${activeOrdersCount})` : ""}
-          </button>
-          <button
-            className={activeTab === "menu" ? "active" : ""}
-            onClick={() => setActiveTab("menu")}
-          >
-            Menu items {menu.length > 0 ? `(${menu.length})` : ""}
-          </button>
-          <button
-            className={activeTab === "sre" ? "active" : ""}
-            onClick={() => setActiveTab("sre")}
-          >
-            Service health & controls
-          </button>
-        </div>
-      </div>
+    <div className="admin-layout-container">
+      <AdminSidebar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        activeOrdersCount={activeOrdersCount}
+        menuItemsCount={menu.length}
+        circuitState={circuitState}
+        activeChaos={activeChaos}
+        totalStudentsCount={crmStats?.total_students || 4}
+      />
 
-      {activeTab === "kitchen" && (
-        <section className="admin-panel" style={{ width: "100%" }}>
-          <KitchenQueue
+      <main className="admin-main-content">
+        {(activeTab === "crm" || activeTab === "students" || activeTab === "orders") && (
+          <AdminCRMView
             orders={kitchenOrders}
+            crmStats={crmStats}
+            onRefresh={refreshAll}
             onAdvanceStatus={advanceKitchenStatus}
-            onDeleteOrder={deleteOrder}
-            onClearAllOrders={clearAllOrders}
           />
-        </section>
-      )}
+        )}
 
-      {activeTab === "menu" && (
-        <section className="admin-panel" style={{ width: "100%" }}>
-          <MenuManager
-            menu={menu}
-            onAddItem={addMenuItem}
-            onDeleteItem={deleteMenuItem}
-            onToggleAvailability={toggleMenuItemAvailability}
-          />
-        </section>
-      )}
-
-      {activeTab === "sre" && (
-        <div className="admin-grid">
-          <section className="admin-panel">
-            <SREDashboard
-              health={health}
-              circuitState={circuitState}
-              metrics={metrics}
-              incidents={incidents}
-              selectedIncident={selectedIncident}
-              onSelectIncident={setSelectedIncident}
+        {activeTab === "kitchen" && (
+          <section className="admin-panel" style={{ width: "100%" }}>
+            <div className="admin-panel-header-simple">
+              <div>
+                <p className="eyebrow">Kitchen Operations · Order Fulfillment</p>
+                <h1 className="admin-title">Live Kitchen Queue</h1>
+              </div>
+              <span className="muted-badge">{activeOrdersCount} in progress</span>
+            </div>
+            <KitchenQueue
+              orders={kitchenOrders}
+              onAdvanceStatus={advanceKitchenStatus}
+              onDeleteOrder={deleteOrder}
+              onClearAllOrders={clearAllOrders}
             />
           </section>
+        )}
 
-          <aside className="admin-rail">
-            <ChaosConsole
-              activeChaos={activeChaos}
-              onTriggerChaos={triggerChaos}
-              onResetSystem={resetAll}
+        {activeTab === "menu" && (
+          <section className="admin-panel" style={{ width: "100%" }}>
+            <div className="admin-panel-header-simple">
+              <div>
+                <p className="eyebrow">Inventory & Catalog · Live Pricing</p>
+                <h1 className="admin-title">Menu Management</h1>
+              </div>
+              <span className="muted-badge">{menu.length} catalog dishes</span>
+            </div>
+            <MenuManager
+              menu={menu}
+              onAddItem={addMenuItem}
+              onDeleteItem={deleteMenuItem}
+              onToggleAvailability={toggleMenuItemAvailability}
             />
-          </aside>
-        </div>
-      )}
-    </main>
+          </section>
+        )}
+
+        {activeTab === "sre" && (
+          <div className="sre-layout-wrapper">
+            <div className="admin-panel-header-simple" style={{ marginBottom: "16px" }}>
+              <div>
+                <p className="eyebrow">Reliability Engineering · Fault Injection</p>
+                <h1 className="admin-title">System Health & Chaos Controls</h1>
+              </div>
+              <span
+                className="muted-badge"
+                style={{
+                  color: circuitState === "OPEN" ? "#c15b43" : "var(--leaf)",
+                  fontWeight: 600,
+                }}
+              >
+                ● Circuit {circuitState.toLowerCase()}
+              </span>
+            </div>
+            <div className="admin-grid">
+              <section className="admin-panel">
+                <SREDashboard
+                  health={health}
+                  circuitState={circuitState}
+                  metrics={metrics}
+                  incidents={incidents}
+                  selectedIncident={selectedIncident}
+                  onSelectIncident={setSelectedIncident}
+                  externalServices={externalServices}
+                  activeChaos={activeChaos}
+                  onRefresh={refreshAll}
+                />
+              </section>
+
+              <aside className="admin-rail">
+                <ChaosConsole
+                  activeChaos={activeChaos}
+                  onTriggerChaos={triggerChaos}
+                  onResetSystem={resetAll}
+                />
+              </aside>
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
   );
 }

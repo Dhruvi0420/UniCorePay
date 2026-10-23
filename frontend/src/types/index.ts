@@ -30,11 +30,47 @@ export interface OrderItem {
 export interface KitchenOrder {
   id: string;
   tokenNumber: string;
+  studentId?: string;
   items: OrderItem[];
   totalPrice: number;
   paymentMethod: PaymentMethod;
   status: OrderStatus;
   time: string;
+  createdAt?: string;
+  selfHealingNotes?: string[];
+}
+
+export interface StudentProfile {
+  student_id: string;
+  name: string;
+  branch: string;
+  email: string;
+  phone?: string;
+  avatar: string;
+  wallet_balance: number;
+  orders_count: number;
+  total_spent: number;
+  last_order_at?: string | null;
+  preferred_payment: string;
+}
+
+export interface CRMStats {
+  total_orders: number;
+  total_revenue: number;
+  total_students: number;
+  active_ordering_students: number;
+  average_order_value: number;
+  payment_stats: {
+    upi: { count: number; amount: number; percentage: number };
+    campus_wallet: { count: number; amount: number; percentage: number };
+  };
+  prep_stats: {
+    received: number;
+    preparing: number;
+    ready: number;
+    completed: number;
+  };
+  students: StudentProfile[];
 }
 
 export interface ChatMessage {
@@ -80,4 +116,17 @@ export interface SystemMetrics {
   failuresInjected: number;
   autoRecoveries: number;
   doubleChargesPrevented: number;
+}
+
+export interface ExternalServiceInfo {
+  id: string;
+  name: string;
+  provider: string;
+  endpoint: string;
+  type: string;
+  status: "UP" | "DOWN" | "DEGRADED";
+  http_code: number;
+  latency_ms: number;
+  packet_loss_pct: number;
+  last_heartbeat: string;
 }

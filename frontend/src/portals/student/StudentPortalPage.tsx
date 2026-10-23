@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useCanteen } from "../../context/CanteenContext";
+import { PaytmPaymentModal } from "../../components/payment/PaytmPaymentModal";
 import type { PaymentMethod } from "../../types";
 
 export function StudentPortalPage() {
@@ -12,6 +13,7 @@ export function StudentPortalPage() {
     walletBalance,
     topupWallet,
     circuitState,
+    activeChaos,
     messages,
     isProcessing,
     kitchenOrders,
@@ -21,6 +23,7 @@ export function StudentPortalPage() {
   const [input, setInput] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [paymentChoice, setPaymentChoice] = useState<PaymentMethod>("upi");
+  const [isPaytmModalOpen, setIsPaytmModalOpen] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,7 +47,11 @@ export function StudentPortalPage() {
 
   const handlePlaceOrder = async () => {
     if (cart.length === 0 || isProcessing) return;
-    await placeOrder(paymentChoice);
+    if (paymentChoice === "upi") {
+      setIsPaytmModalOpen(true);
+    } else {
+      await placeOrder("campus_wallet");
+    }
   };
 
   return (
@@ -198,11 +205,15 @@ export function StudentPortalPage() {
                 </div>
 
                 <button
-                  className="primary-button"
+                  className={`primary-button ${paymentChoice === "upi" ? "paytm-action-btn" : ""}`}
                   onClick={handlePlaceOrder}
                   disabled={isProcessing || cart.length === 0}
                 >
-                  {isProcessing ? "Processing..." : `Place Order (₹${cartTotal.toFixed(2)})`}
+                  {isProcessing
+                    ? "Processing..."
+                    : paymentChoice === "upi"
+                    ? `📱 Pay ₹${cartTotal.toFixed(2)} via Paytm UPI`
+                    : `💳 Pay ₹${cartTotal.toFixed(2)} from Campus Wallet`}
                 </button>
               </div>
             )}
@@ -287,6 +298,20 @@ export function StudentPortalPage() {
           </div>
         ))}
       </div>
+
+      {/* Paytm Payment Gateway Modal */}
+      <PaytmPaymentModal
+        isOpen={isPaytmModalOpen}
+        onClose={() => setIsPaytmModalOpen(false)}
+        items={cart}
+        totalAmount={cartTotal}
+        circuitState={circuitState}
+        activeChaos={activeChaos}
+        walletBalance={walletBalance}
+        onConfirmOrder={async (method) => {
+          return await placeOrder(method);
+        }}
+      />
     </main>
   );
 }

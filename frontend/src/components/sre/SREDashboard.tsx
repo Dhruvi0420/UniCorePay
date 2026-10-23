@@ -1,6 +1,17 @@
-import type { CircuitState, Incident, SystemHealthState, SystemMetrics } from "../../types";
+import type { CircuitState, Incident, SystemHealthState, SystemMetrics, ExternalServiceInfo } from "../../types";
+import { ExternalServicesMonitor } from "./ExternalServicesMonitor";
 
-interface SREDashboardProps { health: SystemHealthState; circuitState: CircuitState; metrics: SystemMetrics; incidents: Incident[]; selectedIncident: Incident | null; onSelectIncident: (incident: Incident) => void; }
+interface SREDashboardProps {
+  health: SystemHealthState;
+  circuitState: CircuitState;
+  metrics: SystemMetrics;
+  incidents: Incident[];
+  selectedIncident: Incident | null;
+  onSelectIncident: (incident: Incident) => void;
+  externalServices?: ExternalServiceInfo[];
+  activeChaos?: string | null;
+  onRefresh?: () => void;
+}
 const labels: Record<string, readonly [string, string]> = {
   aiAgent: ["Ordering assistant", "AI service"],
   ai_agent: ["Ordering assistant", "AI service"],
@@ -11,7 +22,17 @@ const labels: Record<string, readonly [string, string]> = {
   database: ["Order ledger", "Transaction store"],
 };
 
-export function SREDashboard({ health, circuitState, metrics, incidents, selectedIncident, onSelectIncident }: SREDashboardProps) {
+export function SREDashboard({
+  health,
+  circuitState,
+  metrics,
+  incidents,
+  selectedIncident,
+  onSelectIncident,
+  externalServices = [],
+  activeChaos = null,
+  onRefresh,
+}: SREDashboardProps) {
   const healthItems = Object.entries(health) as [keyof SystemHealthState, SystemHealthState[keyof SystemHealthState]][];
   return (
     <div>
@@ -28,8 +49,17 @@ export function SREDashboard({ health, circuitState, metrics, incidents, selecte
           </div>
         ))}
       </div>
-      <div className="panel-title-row">
-        <h3>Service health</h3>
+
+      {/* External Third-Party Upstream Services Hub */}
+      <ExternalServicesMonitor
+        externalServices={externalServices}
+        circuitState={circuitState}
+        activeChaos={activeChaos}
+        onRefresh={onRefresh}
+      />
+
+      <div className="panel-title-row" style={{ marginTop: "24px" }}>
+        <h3>Internal Services Health</h3>
         <span className="muted-badge">Circuit {circuitState.toLowerCase()}</span>
       </div>
       <div className="health-grid">
