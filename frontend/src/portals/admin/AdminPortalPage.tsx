@@ -44,11 +44,10 @@ export function AdminPortalPage() {
         menuItemsCount={menu.length}
         circuitState={circuitState}
         activeChaos={activeChaos}
-        totalStudentsCount={crmStats?.total_students || 4}
       />
 
       <main className="admin-main-content">
-        {(activeTab === "crm" || activeTab === "students" || activeTab === "orders") && (
+        {activeTab === "crm" && (
           <AdminCRMView
             orders={kitchenOrders}
             crmStats={crmStats}

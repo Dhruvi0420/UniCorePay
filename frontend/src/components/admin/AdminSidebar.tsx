@@ -1,11 +1,9 @@
 import React from "react";
 import {
   LayoutDashboard,
-  Users,
   UtensilsCrossed,
   BookOpen,
   Activity,
-  Receipt,
   Store,
 } from "lucide-react";
 import type { CircuitState } from "../../types";
@@ -19,7 +17,6 @@ interface AdminSidebarProps {
   menuItemsCount: number;
   circuitState: CircuitState;
   activeChaos: string | null;
-  totalStudentsCount?: number;
 }
 
 export const AdminSidebar: React.FC<AdminSidebarProps> = ({
@@ -29,7 +26,6 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   menuItemsCount,
   circuitState,
   activeChaos,
-  totalStudentsCount = 4,
 }) => {
   return (
     <aside className="admin-sidebar-root">
@@ -54,27 +50,6 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
             <LayoutDashboard size={18} />
           </span>
           <span className="admin-sidebar-label">Dashboard & CRM</span>
-        </button>
-
-        <button
-          className={`admin-sidebar-btn ${activeTab === "students" ? "active" : ""}`}
-          onClick={() => onTabChange("students")}
-        >
-          <span className="admin-sidebar-icon">
-            <Users size={18} />
-          </span>
-          <span className="admin-sidebar-label">Student Directory</span>
-          <span className="admin-sidebar-badge">{totalStudentsCount}</span>
-        </button>
-
-        <button
-          className={`admin-sidebar-btn ${activeTab === "orders" ? "active" : ""}`}
-          onClick={() => onTabChange("orders")}
-        >
-          <span className="admin-sidebar-icon">
-            <Receipt size={18} />
-          </span>
-          <span className="admin-sidebar-label">Order Ledger</span>
         </button>
 
         <div className="admin-sidebar-section-label">Operations</div>

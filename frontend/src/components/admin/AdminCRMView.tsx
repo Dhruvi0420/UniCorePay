@@ -242,60 +242,84 @@ export const AdminCRMView: React.FC<AdminCRMViewProps> = ({
           )}
         </div>
 
-        <div className="crm-student-cards-grid">
-          {students.map((student) => {
-            const isSelected = selectedStudentFilter === student.student_id;
-            return (
-              <div
-                key={student.student_id}
-                className={`crm-student-card ${isSelected ? "selected" : ""}`}
-                onClick={() =>
-                  setSelectedStudentFilter(isSelected ? null : student.student_id)
-                }
-              >
-                <div className="crm-student-card-top">
-                  <span className="crm-student-avatar">{student.avatar}</span>
-                  <div>
-                    <h3 className="crm-student-name">{student.name}</h3>
-                    <span className="crm-student-id">{student.student_id}</span>
-                  </div>
-                </div>
-
-                <div className="crm-student-branch">{student.branch}</div>
-
-                <div className="crm-student-stats-row">
-                  <div>
-                    <span className="stat-label">Balance</span>
-                    <span className="stat-value">₹{student.wallet_balance.toFixed(2)}</span>
-                  </div>
-                  <div>
-                    <span className="stat-label">Orders</span>
-                    <span className="stat-value">{student.orders_count}</span>
-                  </div>
-                  <div>
-                    <span className="stat-label">Total Spent</span>
-                    <span className="stat-value">₹{student.total_spent.toFixed(2)}</span>
-                  </div>
-                </div>
-
-                <div className="crm-student-card-footer">
-                  <span className="crm-student-pref">
-                    Pref:{" "}
-                    <strong>
-                      {student.preferred_payment === "campus_wallet"
-                        ? "Campus Wallet"
-                        : student.preferred_payment === "upi"
-                        ? "UPI Gateway"
-                        : "Campus Pay"}
-                    </strong>
-                  </span>
-                  <span className="crm-filter-hint">
-                    {isSelected ? "Showing Orders ✓" : "Click to Filter ➔"}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
+        <div className="crm-table-wrapper crm-student-table-wrapper">
+          <table className="crm-table crm-student-table">
+            <thead>
+              <tr>
+                <th>Student Profile</th>
+                <th>Academic Cohort</th>
+                <th>Wallet Balance</th>
+                <th>Orders Placed</th>
+                <th>Total Spent</th>
+                <th>Preferred Payment</th>
+                <th style={{ textAlign: "right" }}>Cohort Filter</th>
+              </tr>
+            </thead>
+            <tbody>
+              {students.map((student) => {
+                const isSelected = selectedStudentFilter === student.student_id;
+                return (
+                  <tr
+                    key={student.student_id}
+                    className={`crm-table-row crm-student-row ${isSelected ? "selected-student-row" : ""}`}
+                    onClick={() =>
+                      setSelectedStudentFilter(isSelected ? null : student.student_id)
+                    }
+                    style={{ cursor: "pointer" }}
+                  >
+                    <td>
+                      <div className="crm-table-student">
+                        <span className="crm-mini-avatar">{student.avatar}</span>
+                        <div>
+                          <div className="crm-student-name-bold">{student.name}</div>
+                          <div className="crm-student-id-sub">{student.student_id}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <span className="crm-student-branch-text">{student.branch}</span>
+                    </td>
+                    <td>
+                      <span className="crm-money-val">₹{student.wallet_balance.toFixed(2)}</span>
+                    </td>
+                    <td>
+                      <span className="crm-orders-count-badge">
+                        {student.orders_count} {student.orders_count === 1 ? "order" : "orders"}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="crm-money-val bold">₹{student.total_spent.toFixed(2)}</span>
+                    </td>
+                    <td>
+                      <span
+                        className={`crm-payment-tag ${
+                          student.preferred_payment === "campus_wallet" ? "wallet" : "upi"
+                        }`}
+                      >
+                        {student.preferred_payment === "campus_wallet"
+                          ? "💳 Campus Wallet"
+                          : student.preferred_payment === "upi"
+                          ? "📱 UPI Gateway"
+                          : "Campus Pay"}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <button
+                        type="button"
+                        className={`crm-student-filter-btn ${isSelected ? "active" : ""}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedStudentFilter(isSelected ? null : student.student_id);
+                        }}
+                      >
+                        {isSelected ? "Showing Orders ✓" : "Filter Orders ➔"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </section>
 

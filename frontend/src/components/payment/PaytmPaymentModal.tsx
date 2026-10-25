@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   QrCode,
   Smartphone,
@@ -6,8 +7,12 @@ import {
   AlertTriangle,
   CheckCircle2,
   X,
-  RefreshCw,
   ArrowRight,
+  Clock,
+  IndianRupee,
+  Receipt,
+  CreditCard,
+  Wallet,
 } from "lucide-react";
 import type { CircuitState, OrderItem } from "../../types";
 
@@ -22,6 +27,15 @@ interface PaytmPaymentModalProps {
   onConfirmOrder: (paymentMethod: "upi" | "campus_wallet") => Promise<boolean>;
 }
 
+// Snapshot to preserve order data after cart clears
+interface OrderSnapshot {
+  items: { name: string; qty: number; price: number; emoji: string }[];
+  totalAmount: number;
+  paymentMethod: "upi" | "campus_wallet";
+  txnId: string;
+  timestamp: string;
+}
+
 export const PaytmPaymentModal: React.FC<PaytmPaymentModalProps> = ({
   isOpen,
   onClose,
@@ -33,18 +47,22 @@ export const PaytmPaymentModal: React.FC<PaytmPaymentModalProps> = ({
   onConfirmOrder,
 }) => {
   const [step, setStep] = useState<"qr_scan" | "processing" | "success" | "fallback_recovery">("qr_scan");
-  const [countdown, setCountdown] = useState(285); // 4m 45s
+  const [countdown, setCountdown] = useState(285);
   const [recoveryLog, setRecoveryLog] = useState<string[]>([]);
+
+  // Snapshot of order at time of payment — immune to cart clearing
+  const orderSnapshot = useRef<OrderSnapshot | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       setStep("qr_scan");
       setCountdown(285);
       setRecoveryLog([]);
+      orderSnapshot.current = null;
     }
   }, [isOpen]);
 
-  // Countdown timer simulation
+  // Countdown timer
   useEffect(() => {
     if (!isOpen || step !== "qr_scan") return;
     const interval = setInterval(() => {
@@ -59,17 +77,35 @@ export const PaytmPaymentModal: React.FC<PaytmPaymentModalProps> = ({
     return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
 
+  const generateTxnId = () => {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let id = "PTM";
+    for (let i = 0; i < 12; i++) id += chars[Math.floor(Math.random() * chars.length)];
+    return id;
+  };
+
   const handleSimulatePayment = async () => {
+    // Snapshot current order state BEFORE payment (cart will clear after success)
+    orderSnapshot.current = {
+      items: items.map((i) => ({ name: i.name, qty: i.qty, price: i.price, emoji: i.emoji })),
+      totalAmount,
+      paymentMethod: "upi",
+      txnId: generateTxnId(),
+      timestamp: new Date().toLocaleTimeString("en-IN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+      }),
+    };
+
     setStep("processing");
 
-    // Check if external UPI service will fail
     const willFail = circuitState === "OPEN" || activeChaos === "upi_timeout";
 
-    // Simulate network delay to external Paytm Gateway API
     await new Promise((r) => setTimeout(r, 1400));
 
     if (!willFail) {
-      // Gateway is healthy -> 200 OK
       const success = await onConfirmOrder("upi");
       if (success) {
         setStep("success");
@@ -77,19 +113,21 @@ export const PaytmPaymentModal: React.FC<PaytmPaymentModalProps> = ({
         setStep("qr_scan");
       }
     } else {
-      // Gateway Outage -> 504 Timeout -> Trigger Autonomous Self-Healing Fallback
+      // Gateway outage → self-healing fallback
       setStep("fallback_recovery");
+      orderSnapshot.current!.paymentMethod = "campus_wallet";
+
       setRecoveryLog([
-        "⚠️ HTTP 504: Paytm Upstream Aggregator timed out (100% packet loss)",
-        "🔍 PyBreaker FSM detected gateway failure ➔ Circuit Tripped to OPEN",
-        "⚡ Hyperswitch Smart Routing engaged: Diverting to Campus Wallet Fallback",
+        "⚠️ HTTP 504: Paytm Upstream Aggregator timed out",
+        "🔍 Circuit Breaker tripped → OPEN state",
+        "⚡ Smart Routing → Campus Wallet Fallback",
       ]);
 
       await new Promise((r) => setTimeout(r, 1200));
 
       setRecoveryLog((prev) => [
         ...prev,
-        `💳 Checking Campus Wallet balance (Available: ₹${walletBalance.toFixed(2)})`,
+        `💳 Campus Wallet balance: ₹${walletBalance.toFixed(2)}`,
       ]);
 
       await new Promise((r) => setTimeout(r, 1000));
@@ -98,8 +136,8 @@ export const PaytmPaymentModal: React.FC<PaytmPaymentModalProps> = ({
       if (success) {
         setRecoveryLog((prev) => [
           ...prev,
-          "✓ Compensating Fallback Successful: ₹" + totalAmount.toFixed(2) + " debited from Campus Wallet",
-          "🎫 Order Token Generated with ZERO Downtime!",
+          `✅ ₹${orderSnapshot.current!.totalAmount.toFixed(2)} debited from Campus Wallet`,
+          "🎫 Order Token generated — Zero Downtime!",
         ]);
         setStep("success");
       }
@@ -108,124 +146,157 @@ export const PaytmPaymentModal: React.FC<PaytmPaymentModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="paytm-modal-backdrop" onClick={onClose}>
-      <div className="paytm-modal-card" onClick={(e) => e.stopPropagation()}>
-        {/* Paytm Header */}
-        <div className="paytm-modal-header">
-          <div className="paytm-brand-row">
-            <div className="paytm-logo-badge">
-              <span className="paytm-logo-text">
-                pay<span className="paytm-tm">tm</span>
+  // Use snapshot for success screen, live props for others
+  const snap = orderSnapshot.current;
+  const displayAmount = step === "success" && snap ? snap.totalAmount : totalAmount;
+  const displayItems = step === "success" && snap ? snap.items : items;
+  const wasFallback = snap?.paymentMethod === "campus_wallet";
+
+  return createPortal(
+    <div className="ptm-backdrop" onClick={onClose}>
+      <div className="ptm-card" onClick={(e) => e.stopPropagation()}>
+        {/* ── Header ── */}
+        <div className="ptm-header">
+          <div className="ptm-header-top">
+            <div className="ptm-brand">
+              <span className="ptm-logo">
+                pay<span className="ptm-logo-accent">tm</span>
               </span>
-              <span className="paytm-tagline">Payments Bank · UPI</span>
+              <span className="ptm-divider">|</span>
+              <span className="ptm-sub">Payments Bank · UPI</span>
             </div>
-            <button className="paytm-close-btn" onClick={onClose} title="Cancel">
-              <X size={18} />
+            <button className="ptm-x" onClick={onClose} aria-label="Close">
+              <X size={16} strokeWidth={2.5} />
             </button>
           </div>
 
-          <div className="paytm-merchant-info">
-            <div>
-              <p className="paytm-merchant-name">UniCore Campus Canteen</p>
-              <p className="paytm-merchant-id">Merchant ID: PTM-CANTEEN-9042 · Verified Merchant ✓</p>
+          <div className="ptm-merchant-row">
+            <div className="ptm-merchant-info">
+              <p className="ptm-merchant-name">UniCore Campus Canteen</p>
+              <p className="ptm-merchant-id">
+                <ShieldCheck size={11} /> Verified Merchant · PTM-9042
+              </p>
             </div>
-            <div className="paytm-amount-tag">
-              <span className="paytm-rs">₹</span>
-              <span className="paytm-val">{totalAmount.toFixed(2)}</span>
+            <div className="ptm-amount-display">
+              <span className="ptm-rs">₹</span>
+              <span className="ptm-amount-val">{displayAmount.toFixed(2)}</span>
             </div>
           </div>
         </div>
 
-        {/* Modal Body */}
-        <div className="paytm-modal-body">
+        {/* ── Body ── */}
+        <div className="ptm-body">
+          {/* ─── QR SCAN STEP ─── */}
           {step === "qr_scan" && (
-            <div className="paytm-qr-view">
-              <div className="paytm-qr-box">
-                {/* Simulated dynamic SVG QR Code with Paytm icon */}
-                <div className="paytm-qr-frame">
-                  <QrCode size={140} className="paytm-qr-icon" />
-                  <div className="paytm-qr-center-pill">
-                    <span>paytm</span>
+            <div className="ptm-qr-step">
+              {/* Order Summary */}
+              {items.length > 0 && (
+                <div className="ptm-order-summary">
+                  <div className="ptm-summary-label">
+                    <Receipt size={13} />
+                    <span>Order Summary</span>
+                  </div>
+                  <div className="ptm-items-list">
+                    {items.map((item, i) => (
+                      <div key={i} className="ptm-item-row">
+                        <span className="ptm-item-emoji">{item.emoji}</span>
+                        <span className="ptm-item-name">{item.name}</span>
+                        <span className="ptm-item-qty">×{item.qty}</span>
+                        <span className="ptm-item-price">₹{(item.price * item.qty).toFixed(0)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="ptm-summary-total">
+                    <span>Total</span>
+                    <span>₹{totalAmount.toFixed(2)}</span>
                   </div>
                 </div>
-                <div className="paytm-qr-timer">
-                  <span>Expiring in: </span>
+              )}
+
+              {/* QR Code */}
+              <div className="ptm-qr-container">
+                <div className="ptm-qr-frame">
+                  <div className="ptm-qr-corners">
+                    <div className="ptm-corner ptm-corner-tl"></div>
+                    <div className="ptm-corner ptm-corner-tr"></div>
+                    <div className="ptm-corner ptm-corner-bl"></div>
+                    <div className="ptm-corner ptm-corner-br"></div>
+                  </div>
+                  <QrCode size={120} className="ptm-qr-icon" strokeWidth={1} />
+                  <div className="ptm-qr-brand-pill">paytm</div>
+                </div>
+                <div className="ptm-qr-timer">
+                  <Clock size={12} />
+                  <span>Expires in </span>
                   <strong>{formatCountdown(countdown)}</strong>
                 </div>
               </div>
 
-              <div className="paytm-scan-hints">
-                <p>Scan this dynamic QR using <strong>Paytm, Google Pay, PhonePe,</strong> or any UPI App</p>
-                <div className="paytm-upi-apps-row">
-                  <span className="upi-app-pill paytm-pill">Paytm</span>
-                  <span className="upi-app-pill gpay-pill">GPay</span>
-                  <span className="upi-app-pill phonepe-pill">PhonePe</span>
-                  <span className="upi-app-pill bhim-pill">BHIM</span>
-                </div>
+              <p className="ptm-scan-label">
+                Scan with <strong>Paytm, Google Pay, PhonePe</strong> or any UPI app
+              </p>
+
+              {/* UPI App Pills */}
+              <div className="ptm-upi-pills">
+                <span className="ptm-pill ptm-pill-paytm">Paytm</span>
+                <span className="ptm-pill ptm-pill-gpay">GPay</span>
+                <span className="ptm-pill ptm-pill-phonepe">PhonePe</span>
+                <span className="ptm-pill ptm-pill-bhim">BHIM</span>
               </div>
 
-              {/* Gateway Status Banner */}
+              {/* Gateway Status */}
               <div
-                className={`paytm-gateway-status-banner ${
+                className={`ptm-gateway-bar ${
                   circuitState === "OPEN" || activeChaos === "upi_timeout"
-                    ? "status-banner-alert"
-                    : "status-banner-healthy"
+                    ? "ptm-gateway-down"
+                    : "ptm-gateway-ok"
                 }`}
               >
-                <div className="banner-top">
-                  <span className="banner-title">
-                    External Gateway: <strong>https://securegw.paytm.in</strong>
-                  </span>
-                  <span className="banner-status-tag">
-                    {circuitState === "OPEN" || activeChaos === "upi_timeout" ? "DOWN (504 Timeout)" : "ONLINE (200 OK)"}
-                  </span>
-                </div>
-                <p className="banner-desc">
+                <div className="ptm-gateway-dot"></div>
+                <span className="ptm-gateway-label">
                   {circuitState === "OPEN" || activeChaos === "upi_timeout"
-                    ? "⚠️ Aggregator outage active. UniCorePay will test self-healing smart fallback."
-                    : "✓ Primary Paytm UPI switch operational. Typical latency ~42ms."}
-                </p>
+                    ? "Gateway Offline · 504 Timeout"
+                    : "Gateway Online · ~42ms"}
+                </span>
               </div>
 
-              {/* Primary Action Button */}
-              <button
-                className="paytm-simulate-pay-btn"
-                onClick={handleSimulatePayment}
-              >
-                <Smartphone size={17} />
-                <span>Simulate App Payment (₹{totalAmount.toFixed(2)})</span>
-                <ArrowRight size={16} />
+              {/* Pay Button */}
+              <button className="ptm-pay-btn" onClick={handleSimulatePayment}>
+                <Smartphone size={16} />
+                <span>Pay ₹{totalAmount.toFixed(2)}</span>
+                <ArrowRight size={15} />
               </button>
             </div>
           )}
 
+          {/* ─── PROCESSING STEP ─── */}
           {step === "processing" && (
-            <div className="paytm-processing-view">
-              <div className="paytm-spinner-ring">
-                <RefreshCw size={36} className="paytm-spin-icon" />
+            <div className="ptm-processing-step">
+              <div className="ptm-spinner-wrap">
+                <div className="ptm-spinner-ring"></div>
+                <IndianRupee size={24} className="ptm-spinner-icon" />
               </div>
-              <h3>Connecting to Paytm UPI Switch...</h3>
-              <p>Routing transaction via secure gateway endpoint</p>
-              <code className="paytm-endpoint-code">
-                POST https://securegw.paytm.in/theia/api/v1/process
-              </code>
+              <h3 className="ptm-proc-title">Processing Payment</h3>
+              <p className="ptm-proc-sub">Connecting to Paytm UPI switch...</p>
+              <div className="ptm-proc-endpoint">
+                POST securegw.paytm.in/theia/api/v1/process
+              </div>
             </div>
           )}
 
+          {/* ─── FALLBACK RECOVERY STEP ─── */}
           {step === "fallback_recovery" && (
-            <div className="paytm-fallback-view">
-              <div className="paytm-alert-icon-wrap">
-                <AlertTriangle size={32} />
+            <div className="ptm-fallback-step">
+              <div className="ptm-alert-badge">
+                <AlertTriangle size={24} />
               </div>
-              <h3 className="paytm-outage-title">External Gateway Outage Intercepted!</h3>
-              <p className="paytm-outage-sub">
-                Autonomous Self-Healing Engine (Mechanism 1) is rescuing your transaction.
+              <h3 className="ptm-fallback-title">Gateway Outage Detected</h3>
+              <p className="ptm-fallback-sub">
+                Self-healing engine rescuing your transaction...
               </p>
-
-              <div className="paytm-recovery-log-box">
+              <div className="ptm-recovery-log">
                 {recoveryLog.map((log, index) => (
-                  <div key={index} className="recovery-log-item">
+                  <div key={index} className="ptm-log-line" style={{ animationDelay: `${index * 0.15}s` }}>
                     {log}
                   </div>
                 ))}
@@ -233,38 +304,93 @@ export const PaytmPaymentModal: React.FC<PaytmPaymentModalProps> = ({
             </div>
           )}
 
+          {/* ─── SUCCESS STEP ─── */}
           {step === "success" && (
-            <div className="paytm-success-view">
-              <div className="paytm-success-circle">
-                <CheckCircle2 size={48} />
+            <div className="ptm-success-step">
+              <div className="ptm-success-badge">
+                <div className="ptm-success-ring">
+                  <CheckCircle2 size={44} strokeWidth={1.8} />
+                </div>
               </div>
-              <h2 className="paytm-success-title">Order Confirmed!</h2>
-              <p className="paytm-success-sub">
-                {circuitState === "OPEN" || activeChaos === "upi_timeout"
-                  ? "Rescued via Campus Wallet Fallback (Zero Downtime!)"
-                  : "Paid successfully via Paytm UPI Gateway"}
+
+              <h2 className="ptm-success-title">Payment Successful!</h2>
+              <p className="ptm-success-sub">
+                {wasFallback ? (
+                  <>
+                    <Wallet size={14} />
+                    <span>Paid via Campus Wallet (Auto Fallback)</span>
+                  </>
+                ) : (
+                  <>
+                    <CreditCard size={14} />
+                    <span>Paid via Paytm UPI</span>
+                  </>
+                )}
               </p>
 
-              <div className="paytm-receipt-pill">
-                <span>Amount Paid: <strong>₹{totalAmount.toFixed(2)}</strong></span>
-                <span>Items: <strong>{items.length} items</strong></span>
+              {/* Receipt Card */}
+              <div className="ptm-receipt-card">
+                <div className="ptm-receipt-header">
+                  <Receipt size={14} />
+                  <span>Transaction Receipt</span>
+                </div>
+
+                <div className="ptm-receipt-rows">
+                  {displayItems.map((item, i) => (
+                    <div key={i} className="ptm-receipt-item">
+                      <span>
+                        {item.emoji} {item.name} ×{item.qty}
+                      </span>
+                      <span>₹{(item.price * item.qty).toFixed(0)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="ptm-receipt-divider"></div>
+
+                <div className="ptm-receipt-total-row">
+                  <span>Amount Paid</span>
+                  <span className="ptm-receipt-total-val">₹{displayAmount.toFixed(2)}</span>
+                </div>
+
+                <div className="ptm-receipt-meta">
+                  {snap && (
+                    <>
+                      <div className="ptm-meta-row">
+                        <span>Txn ID</span>
+                        <span>{snap.txnId}</span>
+                      </div>
+                      <div className="ptm-meta-row">
+                        <span>Time</span>
+                        <span>{snap.timestamp}</span>
+                      </div>
+                      <div className="ptm-meta-row">
+                        <span>Method</span>
+                        <span>{wasFallback ? "Campus Wallet" : "UPI"}</span>
+                      </div>
+                      <div className="ptm-meta-row">
+                        <span>Items</span>
+                        <span>{displayItems.reduce((s, i) => s + i.qty, 0)} item(s)</span>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
 
-              <button className="paytm-done-btn" onClick={onClose}>
+              <button className="ptm-done-btn" onClick={onClose}>
                 Done & View Kitchen Token
               </button>
             </div>
           )}
         </div>
 
-        {/* Modal Footer */}
-        <div className="paytm-modal-footer">
-          <div className="paytm-security-badge">
-            <ShieldCheck size={14} />
-            <span>256-Bit Bank-Grade Encryption · Hyperswitch Idempotency Guard Active</span>
-          </div>
+        {/* ── Footer ── */}
+        <div className="ptm-footer">
+          <ShieldCheck size={12} />
+          <span>256-Bit Encryption · PCI DSS Compliant</span>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

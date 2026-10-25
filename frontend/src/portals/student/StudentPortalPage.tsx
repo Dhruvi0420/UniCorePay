@@ -1,7 +1,8 @@
 import { useState } from "react";
+import { Clock, RotateCcw, ShieldCheck } from "lucide-react";
 import { useCanteen } from "../../context/CanteenContext";
 import { PaytmPaymentModal } from "../../components/payment/PaytmPaymentModal";
-import type { PaymentMethod } from "../../types";
+import type { PaymentMethod, KitchenOrder } from "../../types";
 
 export function StudentPortalPage() {
   const {
@@ -22,6 +23,7 @@ export function StudentPortalPage() {
 
   const [input, setInput] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [activeTab, setActiveTab] = useState<"menu" | "history">("menu");
   const [paymentChoice, setPaymentChoice] = useState<PaymentMethod>("upi");
   const [isPaytmModalOpen, setIsPaytmModalOpen] = useState(false);
 
@@ -44,6 +46,28 @@ export function StudentPortalPage() {
 
   const activeOrders = kitchenOrders.filter((o) => o.status !== "completed");
   const latestOrder = activeOrders[0];
+
+  const sortedOrders = [...kitchenOrders].sort((a, b) => {
+    const tA = new Date(a.createdAt || 0).getTime();
+    const tB = new Date(b.createdAt || 0).getTime();
+    return tB - tA;
+  });
+
+  const handleReorder = (order: KitchenOrder) => {
+    order.items.forEach((item) => {
+      const menuItem = menu.find((m) => m.name === item.name);
+      addToCart({
+        id: menuItem?.id || item.name,
+        name: item.name,
+        price: item.price,
+        emoji: item.emoji || menuItem?.emoji || "🍽️",
+        description: menuItem?.description || "",
+        category: menuItem?.category || "Meals",
+        available: true,
+      });
+    });
+    setActiveTab("menu");
+  };
 
   const handlePlaceOrder = async () => {
     if (cart.length === 0 || isProcessing) return;
@@ -73,54 +97,180 @@ export function StudentPortalPage() {
       <section className="menu-layout">
         <div>
           <div className="menu-header">
-            <h2 className="section-title">Today’s Menu</h2>
+            <div>
+              <h2 className="section-title">
+                {activeTab === "menu" ? "Today’s Menu" : "Previous Orders"}
+              </h2>
+              <p className="menu-subtitle">
+                {activeTab === "menu"
+                  ? "Fresh canteen dishes prepared live"
+                  : `Your past food orders & kitchen tokens (${kitchenOrders.length})`}
+              </p>
+            </div>
+
             <div className="category-tabs">
-              {menuCategories.map((cat) => (
-                <button
-                  key={cat}
-                  className={`category-tab ${selectedCategory === cat ? "active" : ""}`}
-                  onClick={() => setSelectedCategory(cat)}
-                >
-                  {cat}
-                </button>
-              ))}
+              <button
+                type="button"
+                className={`category-tab ${activeTab === "menu" ? "active" : ""}`}
+                onClick={() => setActiveTab("menu")}
+              >
+                🍽️ Menu
+              </button>
+              <button
+                type="button"
+                className={`category-tab ${activeTab === "history" ? "active" : ""}`}
+                onClick={() => setActiveTab("history")}
+              >
+                🕒 Previous Orders
+                {kitchenOrders.length > 0 && (
+                  <span className="order-count-pill">{kitchenOrders.length}</span>
+                )}
+              </button>
             </div>
           </div>
 
-          {menu.length === 0 ? (
-            <div className="empty-panel-box" style={{ padding: "60px 20px" }}>
-              <span style={{ fontSize: "44px" }}>🍳</span>
-              <h3 style={{ margin: "14px 0 6px" }}>Canteen Menu is Currently Empty</h3>
-              <p>
-                No dishes have been added yet. Switch to the <b>Kitchen Desk (Admin Portal)</b> at the top right to add food items to the menu!
-              </p>
-            </div>
-          ) : filteredFoods.length === 0 ? (
-            <div className="empty-panel-box">
-              <h4>No items found in "{selectedCategory}"</h4>
-              <p>Try selecting "All" or add items in this category from Admin.</p>
-            </div>
+          {activeTab === "menu" ? (
+            <>
+              {/* Compact Sub-Category Filter if menu has multiple categories */}
+              {menuCategories.length > 2 && (
+                <div className="menu-subfilters">
+                  <span className="subfilter-label">Filter:</span>
+                  {menuCategories.map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      className={`subfilter-btn ${selectedCategory === cat ? "active" : ""}`}
+                      onClick={() => setSelectedCategory(cat)}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {menu.length === 0 ? (
+                <div className="empty-panel-box" style={{ padding: "60px 20px" }}>
+                  <span style={{ fontSize: "44px" }}>🍳</span>
+                  <h3 style={{ margin: "14px 0 6px" }}>Canteen Menu is Currently Empty</h3>
+                  <p>
+                    No dishes have been added yet. Switch to the <b>Kitchen Desk (Admin Portal)</b> at the top right to add food items to the menu!
+                  </p>
+                </div>
+              ) : filteredFoods.length === 0 ? (
+                <div className="empty-panel-box">
+                  <h4>No items found in "{selectedCategory}"</h4>
+                  <p>Try selecting "All" or add items in this category from Admin.</p>
+                </div>
+              ) : (
+                <div className="food-grid">
+                  {filteredFoods.map((food) => (
+                    <article className="food-card" key={food.id}>
+                      <div className="food-visual">{food.emoji}</div>
+                      <div className="food-meta">
+                        <div>
+                          <h3 className="food-name">{food.name}</h3>
+                          <p className="food-description">{food.description || "Fresh from the campus kitchen"}</p>
+                        </div>
+                        <span className="food-price">₹{food.price.toFixed(2)}</span>
+                      </div>
+                      <button
+                        className="food-add"
+                        onClick={() => addToCart(food)}
+                        disabled={isProcessing || !food.available}
+                      >
+                        {!food.available ? "Sold Out" : "+ Add to tray"}
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </>
           ) : (
-            <div className="food-grid">
-              {filteredFoods.map((food) => (
-                <article className="food-card" key={food.id}>
-                  <div className="food-visual">{food.emoji}</div>
-                  <div className="food-meta">
-                    <div>
-                      <h3 className="food-name">{food.name}</h3>
-                      <p className="food-description">{food.description || "Fresh from the campus kitchen"}</p>
-                    </div>
-                    <span className="food-price">₹{food.price.toFixed(2)}</span>
-                  </div>
+            /* PREVIOUS ORDERS / ORDER HISTORY VIEW */
+            <div className="history-orders-container">
+              {sortedOrders.length === 0 ? (
+                <div className="empty-history-box">
+                  <span className="empty-icon" style={{ fontSize: "42px", display: "block", marginBottom: "12px" }}>
+                    📦
+                  </span>
+                  <h3 style={{ margin: "0 0 8px" }}>No Previous Orders Yet</h3>
+                  <p style={{ margin: 0, color: "var(--muted)", fontSize: "14px", maxWidth: "400px" }}>
+                    You haven’t placed any orders yet. Select your favorite items from Today's Menu to start!
+                  </p>
                   <button
-                    className="food-add"
-                    onClick={() => addToCart(food)}
-                    disabled={isProcessing || !food.available}
+                    type="button"
+                    className="primary-button"
+                    style={{ marginTop: "18px", display: "inline-flex", width: "auto", padding: "10px 24px" }}
+                    onClick={() => setActiveTab("menu")}
                   >
-                    {!food.available ? "Sold Out" : "+ Add to tray"}
+                    Browse Today's Menu
                   </button>
-                </article>
-              ))}
+                </div>
+              ) : (
+                <div className="history-orders-list">
+                  {sortedOrders.map((order) => (
+                    <article className="history-order-card" key={order.id}>
+                      <div className="history-order-top">
+                        <div className="history-token-wrap">
+                          <span className="history-token-badge">{order.tokenNumber}</span>
+                          <span className="history-order-time">
+                            <Clock size={12} />
+                            {order.time}
+                          </span>
+                        </div>
+
+                        <span className={`order-status-pill status-${order.status}`}>
+                          {order.status === "received" && "🕒 In Queue"}
+                          {order.status === "preparing" && "🍳 Cooking"}
+                          {order.status === "ready" && "🎉 Ready for Pickup"}
+                          {order.status === "completed" && "✅ Picked Up"}
+                        </span>
+                      </div>
+
+                      <div className="history-order-items">
+                        {order.items.map((item, idx) => (
+                          <div key={idx} className="history-item-row">
+                            <span className="history-item-emoji">{item.emoji || "🍽️"}</span>
+                            <span className="history-item-name">{item.name}</span>
+                            <span className="history-item-qty">×{item.qty}</span>
+                            <span className="history-item-price">
+                              ₹{(item.price * item.qty).toFixed(2)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {order.selfHealingNotes && order.selfHealingNotes.length > 0 && (
+                        <div className="history-healing-note">
+                          <ShieldCheck size={13} />
+                          <span>{order.selfHealingNotes[0]}</span>
+                        </div>
+                      )}
+
+                      <div className="history-order-footer">
+                        <div className="history-payment-info">
+                          <span className={`history-payment-pill ${order.paymentMethod}`}>
+                            {order.paymentMethod === "upi" ? "📱 Paytm UPI" : "💳 Campus Wallet"}
+                          </span>
+                          <span className="history-order-total">
+                            ₹{order.totalPrice.toFixed(2)}
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="history-reorder-btn"
+                          onClick={() => handleReorder(order)}
+                          title="Add these items back to tray"
+                        >
+                          <RotateCcw size={13} />
+                          <span>Reorder</span>
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -255,7 +405,18 @@ export function StudentPortalPage() {
 
           {/* Live Kitchen Pickup Status */}
           <div className="rail-card live-order">
-            <h3>Live Pickup</h3>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+              <h3 style={{ margin: 0 }}>Live Pickup</h3>
+              {kitchenOrders.length > 0 && (
+                <button
+                  type="button"
+                  className="view-history-link"
+                  onClick={() => setActiveTab("history")}
+                >
+                  History ({kitchenOrders.length}) →
+                </button>
+              )}
+            </div>
             <p>{activeOrders.length ? "Your order is cooking in the kitchen." : "No active order yet."}</p>
             {latestOrder && (
               <div className="token-row">
